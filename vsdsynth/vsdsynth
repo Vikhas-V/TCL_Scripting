@@ -1,0 +1,26 @@
+#!/bin/tcsh -f
+echo "Welcome to the TCL WORKSHOP"
+echo ""
+echo ""
+echo ""
+
+set working_dir = `pwd`
+
+if ($#argv != 1) then
+	echo "ERROR: Please provide CSV file"
+	exit 1
+endif
+
+if(! -f $argv[1] || $argv[1] == "--help") then
+	if($argv[1] != "--help") then
+		echo "Error file $argv[1] does not exist"
+		exit 1
+	else
+		echo "MY USAGE, USE 1: Follow the steps"
+		echo "Follow them carefully"
+		echo "Check the files before running the script"
+	endif
+else
+	echo "RUNNING TCL SCRIPT FILE"
+	tclsh script.tcl $argv[1]
+endif
