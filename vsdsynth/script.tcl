@@ -349,8 +349,8 @@ set fil [open $files r]
 	puts "\nInfo: Please find the synthesized netlist for $DesignName at below path. You can use this netlist for STA or PNR"
 puts "\n$OutputDirectory/$DesignName.final.synth.v"
 
-source /home/vsduser/vsdsynth/procs/reopenStdout.proc
-source /home/vsduser/vsdsynth/procs/set_num_threads.proc
+source ./procs/reopenStdout.proc
+source ./procs/set_num_threads.proc
 
 #STA
 #Analysis
@@ -358,15 +358,15 @@ source /home/vsduser/vsdsynth/procs/set_num_threads.proc
 reopenStdout $OutputDirectory/$DesignName.conf
 set_multi_cpu_usage -localCpu 2
 
-source /home/vsduser/vsdsynth/procs/read_lib.proc
+source ./procs/read_lib.proc
 read_lib -early /home/vsduser/vsdsynth/osu018_stdcells.lib
 
 read_lib -late /home/vsduser/vsdsynth/osu018_stdcells.lib
 
-source /home/vsduser/vsdsynth/procs/read_verilog.proc
+source ./procs/read_verilog.proc
 read_verilog $OutputDirectory/$DesignName.final.synth.v
 
-source /home/vsduser/vsdsynth/procs/read_sdc.proc
+source ./procs/read_sdc.proc
 read_sdc $OutputDirectory/$DesignName.sdc
 reopenStdout /dev/tty
 set enable_prelayout_timing 1
@@ -407,3 +407,107 @@ puts "\nInfo: STA finished in $time_elapsed_in_sec seconds"
 puts "\nInfo: Refer to $OutputDirectory/$DesignName.results for warning and errors"
 
 puts "tcl_precision is $tcl_precision"
+
+set WRAT "-"
+set fil [open $OutputDirectory/$DesignName.results r]
+set pattern {RAT}
+while {[gets $fil line] != -1} {
+	if {[regexp $pattern $line]} {
+		set WRAT "[expr {[lindex $line 3]/1000}]ns"
+		break
+	} else {
+		continue
+	}
+}
+puts "INFO: Worst RAT Slack is $WRAT"
+close $fil
+
+set fil [open $OutputDirectory/$DesignName.results r]
+set count 0
+while {[gets $fil line] != -1} {
+                incr count [regexp -all -- $pattern $line]
+}
+set count_output_violations $count
+puts "Number of output violations $count_output_violations"
+close $fil
+
+set w_negative_setup_slack "-"
+set fil [open $OutputDirectory/$DesignName.results r]
+set pattern {Setup}
+while {[gets $fil line] != -1} {
+        if {[regexp $pattern $line]} {
+                set w_negative_setup_slack "[expr {[lindex $line 3]/1000}]ns"
+                break
+        } else {
+                continue
+        }
+}
+close $fil
+
+set fil [open $OutputDirectory/$DesignName.results r]
+set count 0
+while {[gets $fil line] != -1} {
+                incr count [regexp -all -- $pattern $line]
+}
+set count_setup_violations $count
+close $fil
+
+set w_negative_hold_slack "-"
+set fil [open $OutputDirectory/$DesignName.results r]
+set pattern {Hold}
+while {[gets $fil line] != -1} {
+        if {[regexp $pattern $line]} {
+                set w_negative_hold_slack "[expr {[lindex $line 3]/1000}]ns"
+                break
+        } else {
+                continue
+        }
+}
+close $fil
+
+set fil [open $OutputDirectory/$DesignName.results r]
+set count 0
+while {[gets $fil line] != -1} {
+                incr count [regexp -all -- $pattern $line]
+}
+set count_hold_violations $count
+close $fil
+
+set pattern {Num of gates}
+set fil [open $OutputDirectory/$DesignName.results r]
+while {[gets $fil line] != -1} {
+        if {[regexp $pattern $line]} {
+                set instance_count [lindex [join $line " "] 4 ]
+                break
+        } else {
+                continue
+        }
+}
+close $fil
+
+set Instance_count "$instance_count PS"
+set time_elapsed_in_sec "$time_elapsed_in_sec PS"
+puts "DesignName is \{$DesignName\}"
+puts "time_elapsed_in_sec is \{$time_elapsed_in_sec\}"
+puts "Instance_count is \{$instance_count\}"
+puts "worst_negative_setup_slack is \{$w_negative_setup_slack\}"
+puts "Number_of_setup_violations is \{$count_setup_violations\}"
+puts "worst_negative_hold_slack is \{$w_negative_hold_slack\}"
+puts "Number_of_hold_violations is \{$count_hold_violations\}"
+puts "worst_RAT_slack is \{$WRAT\}"
+puts "Number_output_violations is \{$count_output_violations\}"
+
+puts "\n"
+puts "                                 **********PRELAYOUT TIMING RESULTS**********                                                      "
+set formatStr {%15s%15s%15s%15s%15s%15s%15s%15s%15s}
+
+puts [format $formatStr "-----------" "-------" "--------------" "-----------" "-----------" "----------" "----------" "-------" "-------"]
+puts [format $formatStr "Design Name" "Runtime" "Instance Count" " WNS Setup " " FEP Setup " " WNS Hold " " FEP Hold " "WNS RAT" "FEP RAT"]
+puts [format $formatStr "-----------" "-------" "--------------" "-----------" "-----------" "----------" "----------" "-------" "-------"]
+foreach design_name $DesignName runtime $time_elapsed_in_sec instance_count $instance_count wns_setup $w_negative_setup_slack fep_setup $count_setup_violations wns_hold $w_negative_hold_slack fep_hold $count_hold_violations wns_rat $WRAT fep_rat $count_output_violations {
+	puts [format $formatStr $design_name $runtime $instance_count $wns_setup $fep_setup $wns_hold $fep_hold $wns_rat $fep_rat]
+}
+
+puts [format $formatStr "-----------" "-------" "--------------" "-----------" "-----------" "----------" "----------" "-------" "-------"]
+puts "\n"
+

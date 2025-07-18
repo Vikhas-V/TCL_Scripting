@@ -6831,6 +6831,6 @@ Optimizing module openMSP430.
 34.2. Executing DEMUXMAP pass.
 Dumping module `\openMSP430'.
 
-End of script. Logfile hash: 79b1f064d0, CPU: user 8.56s system 0.27s, MEM: 70.71 MB peak
+End of script. Logfile hash: 79b1f064d0, CPU: user 5.67s system 0.15s, MEM: 70.71 MB peak
 Yosys 0.29+44 (git sha1 88c849d11, clang 6.0.0-1ubuntu2 -fPIC -Os)
-Time spent: 30% 2x abc (3 sec), 17% 55x opt_expr (2 sec), ...
+Time spent: 33% 2x abc (2 sec), 16% 55x opt_expr (1 sec), ...
