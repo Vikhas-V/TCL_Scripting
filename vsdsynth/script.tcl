@@ -256,3 +256,154 @@ close $sdc_file
 puts "INFO: PROCESSING IS COMPLETE..."
 puts "INFO: SDC FILE is created under the OUTPUT DIRECTORY"
 
+
+# Hierarchy check
+
+
+set data "read liberty -lib -ignore miss dir -setattr blackbox ${LateLibraryPath}"
+
+set filename "$DesignName.hier.ys"
+set fileID [open $OutputDirectory/$filename "w"]
+
+puts -nonewline $fileID $data
+set netlist [glob -dir $NetlistDirectory *.v]
+
+foreach f $netlist {
+	set data $f
+	puts -nonewline $fileID "\nread verilog file $f"
+}
+
+puts -nonewline $fileID "\nhierarchy -check" 
+close $fileID
+
+
+if { [catch {exec yosys -s $OutputDirectory/$DesignName.hier.ys >& $OutputDirectory/$DesignName.hierarchy_check.log} ]} {
+	set filename "$OutputDirectory/$DesignName.hierarchy_check.log"
+	set pattern "referenced in module"
+	set fid [open $filename]
+	while {[gets $fid line] != -1} {
+		if {[regexp -all -- $pattern $line]} {
+			puts "\nERROR: Module [lindex $line 2] is not part of design"
+			puts "\nHiearchy check FAIL"
+		}
+	}
+	close $fid
+} else {
+	puts "\nINFO: Hieararchy check PASS"
+}
+
+puts "\nINFO: Please find the hierarchy check file in [file normalize $OutputDirectory/$DesignName.hierarchy_check.log] for more deets"
+
+#---------------------------#
+#---Main Synthesis Script---#
+#---------------------------#
+
+puts "\nINFO: Creating main synthesis script to be used by Yosys"
+set data "read_liberty -lib -ignore_miss_dir -setattr blackbox ${LateLibraryPath}"
+set files "$DesignName.ys"
+set fid [open $OutputDirectory/$files "w"]
+puts -nonewline $fid $data
+
+set netlist [glob -dir $NetlistDirectory *.v]
+foreach f $netlist {
+	set data $f
+	puts -nonewline $fid "\nread_verilog $f"
+}
+
+puts -nonewline $fid "\nhierarchy -top $DesignName"
+puts -nonewline $fid "\nsynth -top $DesignName"
+puts -nonewline $fid "\nsplitnets -ports -format ___\ndfflibmap -liberty ${LateLibraryPath}\nopt"
+puts -nonewline $fid "\nabc -liberty ${LateLibraryPath}"
+puts -nonewline $fid "\nflatten"
+puts -nonewline $fid "\nclean -purge\niopadmap -outpad BUFX2 A:Y -bits\nopt\nclean"
+puts -nonewline $fid "\nwrite_verilog $OutputDirectory/$DesignName.synth.v"
+close $fid
+
+puts "\nINFO: Running synthesis..."
+
+
+if {[catch {exec yosys -s $OutputDirectory/$DesignName.ys >& $OutputDirectory/$DesignName.synthesis.log} msg]} {
+	puts "\nERROR: Synthesis failed. Please refer to log $OutputDirectory/$DesignName.synthesis.log for errors"
+	exit
+} else {
+	puts "\nINFO: Synthesis successful"
+}
+puts "Please find logs $OutputDirectory/$DesignName.synthesis.log"
+
+
+set fid [open /tmp/1 "w"]
+puts -nonewline $fid [exec grep -v -w "*" $OutputDirectory/$DesignName.synth.v]
+close $fid
+
+set output [open $OutputDirectory/$DesignName.final.synth.v "w"]
+
+set files "/tmp/1"
+set fil [open $files r]
+	while {[gets $fil line] != -1} {
+		puts -nonewline $output [string map {"\\" ""} $line]
+		puts -nonewline $output "\n"
+	}
+	close $fil
+	close $output
+
+	puts "\nInfo: Please find the synthesized netlist for $DesignName at below path. You can use this netlist for STA or PNR"
+puts "\n$OutputDirectory/$DesignName.final.synth.v"
+
+source /home/vsduser/vsdsynth/procs/reopenStdout.proc
+source /home/vsduser/vsdsynth/procs/set_num_threads.proc
+
+#STA
+#Analysis
+
+reopenStdout $OutputDirectory/$DesignName.conf
+set_multi_cpu_usage -localCpu 2
+
+source /home/vsduser/vsdsynth/procs/read_lib.proc
+read_lib -early /home/vsduser/vsdsynth/osu018_stdcells.lib
+
+read_lib -late /home/vsduser/vsdsynth/osu018_stdcells.lib
+
+source /home/vsduser/vsdsynth/procs/read_verilog.proc
+read_verilog $OutputDirectory/$DesignName.final.synth.v
+
+source /home/vsduser/vsdsynth/procs/read_sdc.proc
+read_sdc $OutputDirectory/$DesignName.sdc
+reopenStdout /dev/tty
+set enable_prelayout_timing 1
+if {$enable_prelayout_timing == 1} {
+	puts "\nInfo: enable_prelayout_timing is $enable_prelayout_timing. Enabling zero-wire load parasitics"
+	set spef_file [open $OutputDirectory/$DesignName.spef w]
+puts $spef_file "*SPEF \"IEEE 1481-1998\" "
+puts $spef_file "*DESIGN \"$DesignName\" "
+puts $spef_file "*DATE \"Sun May 11 20:51:50 2025\" "
+puts $spef_file "*VENDOR \"PS 2025 Hackathon\" "
+puts $spef_file "*PROGRAM \"Benchmark Parasitic Generator\" "
+puts $spef_file "*VERSION \"0.0\" "
+puts $spef_file "*DESIGN_FLOW \"NETLIST_TYPE_VERILOG\" "
+puts $spef_file "*DIVIDER / "
+puts $spef_file "*DELIMITER : "
+puts $spef_file "*BUS_DELIMITER [ ] "
+puts $spef_file "*T_UNIT 1 PS "
+puts $spef_file "*C_UNIT 1 FF "
+puts $spef_file "*R_UNIT 1 KOHM "
+puts $spef_file "*L_UNIT 1 UH "
+}
+
+close $spef_file
+
+set conf_file [open $OutputDirectory/$DesignName.conf a]
+puts $conf_file "set_spef_fpath $OutputDirectory/$DesignName.spef"
+puts $conf_file "init_timer "
+puts $conf_file "report_timer "
+puts $conf_file "report_wns "
+puts $conf_file "report_worst_paths -numPaths 10000 "
+close $conf_file
+
+set tcl_precision 3
+
+set time_elapsed_in_us [time {exec /home/vsduser/OpenTimer-1.0.5/bin/OpenTimer < $OutputDirectory/$DesignName.conf >& $OutputDirectory/$DesignName.results} 1]
+set time_elapsed_in_sec "[expr {[lindex $time_elapsed_in_us 0]/100000}] sec"
+puts "\nInfo: STA finished in $time_elapsed_in_sec seconds"
+puts "\nInfo: Refer to $OutputDirectory/$DesignName.results for warning and errors"
+
+puts "tcl_precision is $tcl_precision"

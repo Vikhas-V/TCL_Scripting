@@ -1,0 +1,4 @@
+ERROR: Command syntax error: Missing mode parameter.
+
+> read liberty -lib -ignore miss dir -setattr blackbox /home/vsduser/vsdsynth/osu018_stdcells.lib
+>      ^
